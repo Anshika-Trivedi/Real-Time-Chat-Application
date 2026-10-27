@@ -1,0 +1,269 @@
+Act as a senior full-stack developer, UI/UX designer, database architect, and AI engineer. Build a complete, production-style web application named **ConnectAI — Real-Time Chat & AI Interview Platform**.
+
+I am a beginner, so build the project step by step, use clean and understandable code, explain the setup in simple language, and test every major feature. Do not create only a static UI or a non-functional demo. Implement real backend functionality.
+
+## 1. TECHNOLOGY STACK
+
+Use the following stack where supported:
+
+- Frontend: React with Vite.
+- Styling: Tailwind CSS with a modern, responsive design.
+- Backend: Node.js and Express.
+- Real-time communication: Socket.IO.
+- Database: MongoDB Atlas with Mongoose.
+- Authentication: Firebase Authentication or secure Google OAuth using Google Sign-In.
+- API security: JWT or secure session-based authentication.
+- AI interviews: Gemini API or another supported AI provider, accessed securely through the backend.
+- Deployment: Use a suitable free or low-cost hosting option for the frontend and backend.
+
+If the platform cannot create this exact stack, choose the closest supported stack and clearly explain the differences. Do not mix incompatible authentication approaches or duplicate backend systems unnecessarily.
+
+## 2. USER REGISTRATION AND GOOGLE LOGIN
+
+Implement a complete authentication system.
+
+Features:
+- Sign up and sign in using Google accounts.
+- Allow users to discover and contact other registered users by their verified email addresses.
+- Store a unique user ID, name, verified email, profile picture, bio, and account creation date.
+- Allow users to edit their profile.
+- Include logout and protected routes.
+- Maintain login sessions securely.
+- Prevent duplicate accounts and invalid authentication.
+- Show useful errors when Google authentication fails.
+- Never store Google account passwords.
+- Verify authentication tokens on the backend.
+
+Important: Users must be registered with this application before they can chat. Do not allow access to someone's private Gmail inbox or messages. Google Sign-In is for authentication, not permission to access Gmail contents.
+
+## 3. REAL-TIME CHAT SYSTEM
+
+Create a functional real-time messaging application using Socket.IO or an equivalent supported real-time service.
+
+Features:
+- Search for users by their registered Gmail/Google account email.
+- Send a chat request or start a conversation according to the application's privacy settings.
+- Display a contact list and recent conversations.
+- Send and receive text messages instantly.
+- Show timestamps for messages.
+- Show online/offline status and last-seen time, subject to user privacy settings.
+- Show message delivery and read status.
+- Display typing indicators.
+- Support emoji.
+- Allow users to edit or delete their own messages where appropriate.
+- Include unread-message counts.
+- Load previous conversations from the database.
+- Sort conversations by most recent activity.
+- Support pagination or lazy loading for long chat histories.
+- Handle reconnecting and temporary network failures.
+- Ensure users can only access conversations in which they are participants.
+- Add blocking and reporting options.
+- Validate message content and rate-limit message sending.
+
+Persist messages in MongoDB or the selected database so they remain available after users log out or restart the application.
+
+## 4. AI MOCK INTERVIEW SYSTEM
+
+Create a separate, fully functional AI Interview section.
+
+The user should be able to start an interview by selecting:
+
+- Target job role: Software Developer, Frontend Developer, Backend Developer, Full-Stack Developer, ECE Engineer, Data Analyst, or a custom role.
+- Experience level: Fresher, Intermediate, or Experienced.
+- Interview type: Technical, HR, Communication, Behavioral, or Mixed.
+- Difficulty: Easy, Medium, or Hard.
+- Number of questions: 5, 10, or 15.
+- Interview language: English or another language supported by the AI provider.
+
+### Interview process
+
+1. Show a short introduction and interview instructions.
+2. Generate questions based on the selected job role and difficulty.
+3. Ask one question at a time.
+4. Let the user type an answer.
+5. Optionally support microphone input and spoken answers if the required speech-to-text service is configured.
+6. Display a countdown timer if enabled.
+7. Allow the user to move to the next question.
+8. Save the questions, answers, and interview progress.
+9. Generate a final report after the interview is completed.
+10. Allow the user to review previous interviews.
+
+Do not generate the final review using hardcoded scores. Use the configured AI service to evaluate the actual questions and answers.
+
+## 5. AI INTERVIEW EVALUATION AND REPORT
+
+After each completed interview, generate an understandable report based on the user's responses.
+
+Evaluate these categories:
+
+- Technical knowledge: 0–100.
+- Problem-solving and logical thinking: 0–100.
+- Communication clarity: 0–100.
+- Answer relevance: 0–100.
+- Confidence indicators based only on observable response features, where appropriate.
+- HR and behavioral response quality: 0–100 when applicable.
+
+Provide the following in the report:
+
+1. Overall score out of 100.
+2. Category-wise scores and a chart.
+3. Strengths demonstrated in the answers.
+4. Weak areas and missing concepts.
+5. Specific feedback on each answer.
+6. A suggested improved answer for each question.
+7. Communication feedback on clarity, structure, grammar, and conciseness.
+8. Technical concepts the user should revise.
+9. Recommended practice questions.
+10. A personalized 7-day improvement plan.
+11. A downloadable or printable interview report.
+
+Use transparent scoring criteria and explain why each score was assigned. Distinguish technical correctness from communication quality. Do not claim to measure a person's actual confidence, personality, or employability from text alone. Explain that AI scores are estimates and may be imperfect.
+
+## 6. AI INTERVIEW ASSISTANT
+
+Add an AI assistant that can:
+
+- Explain technical concepts in simple language.
+- Help users prepare for HR questions.
+- Generate coding, SQL, OOP, DBMS, OS, and computer networking questions.
+- Provide hints without immediately revealing the complete solution.
+- Explain why an interview answer is incorrect or incomplete.
+- Create practice questions based on previous weak areas.
+- Answer questions about the user's saved interview reports.
+
+Use a secure backend endpoint for AI requests. Keep all API keys in environment variables, never in frontend source code.
+
+## 7. DASHBOARD AND ANALYTICS
+
+Create a personalized dashboard with:
+
+- Profile summary.
+- Recent conversations.
+- Unread messages.
+- Online contacts.
+- Number of interviews completed.
+- Average interview score.
+- Technical, communication, and problem-solving trends.
+- Recent interview reports.
+- Recommended next learning activities.
+- Progress charts based on real saved data.
+
+Display helpful empty states when a new user has no chats or interview history.
+
+## 8. DATABASE DESIGN
+
+Create suitable database models or collections for:
+
+- Users.
+- Conversations.
+- Conversation participants.
+- Messages.
+- Chat requests.
+- Blocked users and reports.
+- Interview sessions.
+- Interview questions and answers.
+- AI evaluation reports.
+- User progress and preferences.
+
+Use appropriate indexes for user email, conversation participants, message timestamps, and interview history. Add validation, timestamps, and appropriate database relationships.
+
+Avoid storing unnecessary personal information. Restrict private chat and interview data to the authorized user.
+
+## 9. UI/UX DESIGN
+
+Create a modern, polished, professional interface.
+
+Design requirements:
+- Clean light theme with an optional dark theme.
+- Sidebar navigation.
+- Responsive desktop, tablet, and mobile layouts.
+- Attractive dashboard cards.
+- Consistent spacing and typography.
+- Search bars and profile avatars.
+- Clear loading indicators, toast messages, and error states.
+- Accessible form labels and keyboard navigation.
+- Smooth but subtle transitions.
+- Professional chat bubbles and a readable interview interface.
+
+Pages required:
+1. Landing page.
+2. Sign-in and registration.
+3. User onboarding.
+4. Dashboard.
+5. Contacts and user search.
+6. Real-time chat.
+7. AI interview setup.
+8. Live interview.
+9. Interview report.
+10. Interview history.
+11. AI learning assistant.
+12. Profile and settings.
+
+## 10. SECURITY AND PRIVACY
+
+Implement the following:
+
+- Backend authentication and authorization.
+- Server-side input validation.
+- Secure environment variables.
+- Protection against unauthorized conversation access.
+- Rate limiting on authentication-related and AI endpoints.
+- Secure CORS configuration.
+- Safe error handling without exposing secrets.
+- Privacy controls for online status and profile visibility.
+- User-controlled deletion of chat and interview history.
+- Appropriate retention and deletion behavior for stored personal data.
+
+Do not expose private API keys or database credentials in the browser. Do not let a user access another user's interview reports or private messages by changing an ID in a URL.
+
+## 11. TESTING AND DEPLOYMENT
+
+Before considering the project complete:
+
+- Test registration and Google Sign-In.
+- Test user search and chat requests.
+- Test real-time messaging using two separate user accounts.
+- Test message persistence after refreshing the page.
+- Test online status and unread counts.
+- Test interview generation and answer submission.
+- Test AI report generation with actual submitted answers.
+- Test dashboard data and access restrictions.
+- Test mobile responsiveness.
+- Fix build errors, broken routes, and console errors.
+
+Provide:
+- A clear project folder structure.
+- An example environment-variable file containing placeholders only.
+- Exact installation and run commands.
+- MongoDB Atlas setup instructions if MongoDB is used.
+- Google OAuth/Firebase configuration instructions.
+- AI API configuration instructions.
+- Frontend and backend deployment instructions.
+- A README explaining the project.
+- A list of features that are fully implemented and features that still require external configuration.
+
+Never claim a feature works until it has been implemented and tested.
+
+## 12. BUILD ORDER
+
+Build this project in manageable stages:
+
+Stage 1: Create the UI, routing, and responsive layout.
+
+Stage 2: Implement Google authentication and user profiles.
+
+Stage 3: Implement user search and real-time chat.
+
+Stage 4: Add message persistence, unread counts, and online status.
+
+Stage 5: Implement AI interview setup, questions, and answer submission.
+
+Stage 6: Integrate AI evaluation and interview reports.
+
+Stage 7: Add the AI learning assistant and progress dashboard.
+
+Stage 8: Test, fix errors, document configuration, and deploy.
+
+Start with Stage 1, then continue through the stages while preserving the existing working code. Do not repeatedly recreate the project or overwrite working files. If a configuration or external service is required, tell me exactly what to do.
+
+My final goal is a working full-stack application that I can demonstrate as a college placement project, explain to an interviewer, and extend in the future.
