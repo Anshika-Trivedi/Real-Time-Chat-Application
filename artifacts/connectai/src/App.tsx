@@ -1,62 +1,278 @@
-import { type ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { ClerkProvider, Show, SignIn, SignUp, useClerk } from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
+import { Route, Switch, Redirect, Link, useLocation, useParams, Router as WouterRouter } from 'wouter';
+import {
+  Activity, ArrowDown, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp,
+  Clock3, Compass, LayoutDashboard, LoaderCircle, LockKeyhole, LogOut, Menu,
+  MessageCircle, MessageSquare, Mic2, Plus, Search, Send, Settings2, ShieldCheck, Sparkles,
+  Target, Trash2, Users, X,
+} from 'lucide-react';
+import {
+  useAskAssistant, useCompleteInterview, useCreateConversation, useCreateInterview,
+  useDeleteInterview, useDeleteMessage, useGetDashboard, useGetInterview, useGetMe,
+  useListConversations, useListInterviews, useListMessages, useListOlderMessages, useSearchUsers,
+  useSendMessage, useSubmitInterviewAnswer, useUpdateMe,
+  getGetDashboardQueryKey, getGetInterviewQueryKey, getGetMeQueryKey,
+  getListConversationsQueryKey, getListInterviewsQueryKey, getListMessagesQueryKey,
+  getListOlderMessagesQueryKey, getSearchUsersQueryKey,
+} from '@workspace/api-client-react';
+import type { Interview, InterviewInput, Message } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import {
-  Route,
-  Switch,
-  useLocation,
-  Router as WouterRouter,
-} from 'wouter';
 
 const queryClient = new QueryClient();
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+function stripBase(path: string) { return basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path; }
+if (!clerkPubKey) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
 
-function Home() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Replit Agent is building...
-        </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your app will appear here once it's ready.
-        </p>
+const clerkAppearance = {
+  theme: shadcn, cssLayerName: 'clerk',
+  options: { logoPlacement: 'inside' as const, logoLinkUrl: basePath || '/', logoImageUrl: `${window.location.origin}${basePath}/logo.svg` },
+  variables: {
+    colorPrimary: '#287b67', colorForeground: '#263044', colorMutedForeground: '#747c8a',
+    colorDanger: '#c84f48', colorBackground: '#fffefa', colorInput: '#fffefa',
+    colorInputForeground: '#263044', colorNeutral: '#d9dce1', fontFamily: 'DM Sans',
+    borderRadius: '0.8rem',
+  },
+  elements: {
+    rootBox: 'w-full flex justify-center',
+    cardBox: 'bg-[#fffefa] rounded-2xl w-[440px] max-w-full overflow-hidden border border-[#e2e1dc]',
+    card: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    headerTitle: 'text-[#263044] font-bold tracking-tight', headerSubtitle: 'text-[#747c8a]',
+    socialButtonsBlockButtonText: 'text-[#263044] font-semibold', formFieldLabel: 'text-[#263044] font-semibold',
+    footerActionLink: 'text-[#287b67] font-semibold', footerActionText: 'text-[#747c8a]',
+    dividerText: 'text-[#747c8a]', identityPreviewEditButton: 'text-[#287b67]',
+    formFieldSuccessText: 'text-[#287b67]', alertText: 'text-[#263044]',
+    logoBox: 'rounded-xl', logoImage: 'rounded-lg', socialButtonsBlockButton: 'border-[#d9dce1] rounded-xl',
+    formButtonPrimary: 'rounded-xl font-semibold', formFieldInput: 'rounded-xl border-[#d9dce1] bg-[#fffefa]',
+    footerAction: 'border-t border-[#e2e1dc]', dividerLine: 'bg-[#e2e1dc]', alert: 'rounded-xl',
+    otpCodeFieldInput: 'rounded-lg border-[#d9dce1]', formFieldRow: 'gap-2', main: 'gap-5',
+  },
+};
+
+function Button({ children, onClick, kind = 'primary', disabled, type = 'button', testId }: {
+  children: ReactNode; onClick?: () => void; kind?: 'primary' | 'secondary' | 'quiet' | 'danger';
+  disabled?: boolean; type?: 'button' | 'submit'; testId: string;
+}) {
+  return <button data-testid={testId} type={type} onClick={onClick} disabled={disabled}
+    className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${kind === 'primary' ? 'bg-primary text-primary-foreground hover:-translate-y-0.5 hover:shadow-md' : kind === 'secondary' ? 'border border-border bg-card text-foreground hover:bg-muted' : kind === 'danger' ? 'text-destructive hover:bg-destructive/10' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+    {children}
+  </button>;
+}
+function PageTitle({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail?: string; action?: ReactNode }) {
+  return <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="mb-2 font-mono text-[10px] uppercase tracking-[.2em] text-primary">{eyebrow}</p><h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>{detail && <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{detail}</p>}</div>{action}</header>;
+}
+function Skeleton({ rows = 3 }: { rows?: number }) { return <div className="space-y-3" aria-label="Loading"><div className="h-28 animate-pulse rounded-2xl bg-muted" />{Array.from({ length: rows }, (_, i) => <div key={i} className="h-16 animate-pulse rounded-xl bg-muted/80" />)}</div>; }
+function ErrorState({ retry }: { retry: () => void }) { return <div className="rounded-2xl border border-border bg-card p-8 text-center"><CircleHelp className="mx-auto mb-3 text-primary" /><h2 className="font-display text-lg font-bold">We couldn’t load this just now</h2><p className="mt-1 text-sm text-muted-foreground">Your progress is safe. Try again in a moment.</p><div className="mt-4"><Button onClick={retry} kind="secondary" testId="button-retry">Try again</Button></div></div>; }
+function Avatar({ name, image, online }: { name: string; image?: string | null; online?: boolean }) {
+  return <span className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#dcece6] text-sm font-bold text-[#276d5c]" aria-label={name}>
+    {image ? <img src={image} alt="" className="h-full w-full object-cover" /> : name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+    {online && <span className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-[#39a77d]" />}
+  </span>;
+}
+function NavItem({ href, icon: Icon, children, active, testId }: { href: string; icon: typeof Activity; children: ReactNode; active: boolean; testId: string }) {
+  return <Link href={href} data-testid={testId} aria-current={active ? 'page' : undefined} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${active ? 'bg-sidebar-accent text-sidebar-foreground' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'}`}><Icon size={17} strokeWidth={1.8} />{children}</Link>;
+}
+function PortalShell({ children }: { children: ReactNode }) {
+  const [location] = useLocation(); const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: profile } = useGetMe();
+  const { signOut } = useClerk();
+  const nav = [
+    ['/dashboard', LayoutDashboard, 'Overview'], ['/contacts', Users, 'Find peers'],
+    ['/history', Activity, 'Interview history'], ['/assistant', Sparkles, 'Prep assistant'], ['/profile', Settings2, 'My profile'],
+  ] as const;
+  return <div className="min-h-[100dvh] bg-background md:flex">
+    <aside className={`fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col bg-sidebar px-4 py-5 text-sidebar-foreground transition-transform md:sticky md:top-0 md:h-[100dvh] md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <Link href="/dashboard" className="mb-10 flex items-center gap-3 px-2" data-testid="link-brand-dashboard"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-sidebar-primary text-sidebar-primary-foreground"><MessageCircle size={20} /></span><span><span className="block font-display text-[19px] font-extrabold tracking-tight">ConnectAI</span><span className="block text-[10px] tracking-[.14em] text-sidebar-foreground/55">YOUR NEXT STEP, TOGETHER</span></span></Link>
+      <p className="mb-3 px-3 font-mono text-[9px] uppercase tracking-[.18em] text-sidebar-foreground/45">Workspace</p>
+      <nav className="space-y-1" aria-label="Main navigation">{nav.map(([href, icon, label]) => <NavItem key={href} href={href} icon={icon} active={location === href || (href === '/history' && location.startsWith('/interviews/'))} testId={`nav-${label.toLowerCase().replaceAll(' ', '-')}`}>{label}</NavItem>)}</nav>
+      <div className="mt-8 rounded-2xl border border-sidebar-border bg-sidebar-accent/60 p-4"><span className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-sidebar-primary/20 text-sidebar-primary"><ShieldCheck size={16} /></span><p className="font-display text-sm font-bold">A space that’s yours</p><p className="mt-1 text-xs leading-5 text-sidebar-foreground/60">Your practice stays private. Your people are real students.</p></div>
+      <div className="mt-auto border-t border-sidebar-border pt-4">
+        <Link href="/profile" data-testid="nav-profile-bottom" className="flex items-center gap-3 rounded-xl p-2.5 hover:bg-sidebar-accent"><Avatar name={profile?.name || 'Student'} image={profile?.imageUrl} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{profile?.name || 'Your profile'}</span><span className="block truncate text-xs text-sidebar-foreground/55">Placement prep, at your pace</span></span><ChevronDown size={15} className="text-sidebar-foreground/50" /></Link>
+        <button data-testid="button-sign-out" onClick={() => signOut({ redirectUrl: basePath || '/' })} className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"><LogOut size={16} />Sign out</button>
       </div>
+    </aside>
+    {mobileOpen && <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-30 bg-foreground/30 md:hidden" />}
+    <div className="min-w-0 flex-1">
+      <div className="flex h-[68px] items-center justify-between border-b border-border/70 px-5 md:hidden"><button aria-label="Open navigation" data-testid="button-open-navigation" onClick={() => setMobileOpen(true)} className="rounded-lg p-2 hover:bg-muted"><Menu size={19} /></button><span className="font-display font-extrabold">ConnectAI</span><span className="h-8 w-8" /></div>
+      <main className="mx-auto max-w-[1200px] px-5 py-8 sm:px-8 lg:px-12 lg:py-10">{children}</main>
     </div>
-  );
+  </div>;
 }
-
+function AuthOnly({ children }: { children: ReactNode }) { return <><Show when="signed-in">{children}</Show><Show when="signed-out"><Redirect to="/" /></Show></>; }
+function HomeRedirect() { return <><Show when="signed-in"><Redirect to="/dashboard" /></Show><Show when="signed-out"><Landing /></Show></>; }
+function Landing() {
+  return <div className="min-h-[100dvh] overflow-hidden bg-background">
+    <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6"><Link href="/" data-testid="link-brand-home" className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-primary text-primary-foreground"><MessageCircle size={20} /></span><span className="font-display text-xl font-extrabold tracking-tight">ConnectAI</span></Link><div className="flex items-center gap-2"><Link href="/sign-in" data-testid="link-sign-in" className="rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-muted">Sign in</Link><Link href="/sign-up" data-testid="link-sign-up-nav" className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">Get started</Link></div></nav>
+    <section className="relative mx-auto grid max-w-7xl items-center gap-14 px-6 pb-20 pt-14 lg:grid-cols-[1.05fr_.95fr] lg:pb-28 lg:pt-20">
+      <div className="relative z-10"><p className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3.5 py-2 font-mono text-[10px] uppercase tracking-[.15em] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" />Interview practice, made human</p><h1 className="max-w-2xl font-display text-[clamp(3.3rem,7vw,6.2rem)] font-extrabold leading-[.99] tracking-[-.065em]">Be ready for<br /><span className="text-primary">the room</span><span className="text-[#d89450]">.</span></h1><p className="mt-7 max-w-lg text-lg leading-8 text-muted-foreground">Build confidence one answer at a time. Practice realistic interviews, learn what to improve, and meet students who get it.</p><div className="mt-9 flex flex-wrap gap-3"><Link href="/sign-up" data-testid="link-start-practicing" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">Start practicing <ArrowRight size={17} /></Link><a href="#how-it-works" data-testid="link-how-it-works" className="inline-flex items-center gap-2 rounded-xl border border-border px-5 py-3.5 text-sm font-semibold hover:bg-card">See how it works <ArrowDown size={16} /></a></div><p className="mt-6 flex items-center gap-2 text-xs text-muted-foreground"><LockKeyhole size={14} className="text-primary" />Private by default. Connected by choice.</p></div>
+      <div className="relative mx-auto w-full max-w-[510px]"><div className="absolute -right-10 -top-10 h-52 w-52 rounded-full bg-[#efd5b5]/50 blur-3xl" /><div className="absolute -bottom-6 -left-12 h-48 w-48 rounded-full bg-[#cce3d9]/60 blur-3xl" />
+        <div className="relative rotate-[1deg] rounded-[30px] border border-[#e3dfd6] bg-[#fffefa] p-5 shadow-[0_30px_80px_-32px_rgba(44,53,70,.25)] sm:p-7"><div className="flex items-center justify-between"><span className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">Your practice room</span><span className="flex items-center gap-2 rounded-full bg-[#e5f3ec] px-2.5 py-1.5 text-[10px] font-semibold text-[#287b67]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#39a77d]" />Session ready</span></div>
+          <div className="mt-8 flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#f7e7d4] text-[#b87536]"><Mic2 size={21} /></div><div><p className="font-display text-lg font-bold">Product Designer</p><p className="text-xs text-muted-foreground">Behavioral · Intermediate</p></div></div>
+          <div className="mt-6 rounded-2xl bg-[#f5f4ef] p-5"><p className="font-mono text-[9px] uppercase tracking-[.17em] text-primary">Question 03 / 08</p><p className="mt-3 font-display text-xl font-bold leading-7">Tell me about a time you changed your mind after hearing someone else’s perspective.</p><div className="mt-6 flex items-center gap-1.5">{Array.from({length: 8}, (_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i < 3 ? 'bg-primary' : 'bg-[#deded8]'}`} />)}</div></div>
+          <div className="mt-5 flex items-center justify-between rounded-2xl border border-border px-4 py-3"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#e6efeb] text-primary"><Activity size={17} /></span><span><span className="block text-xs font-bold">Your feedback, right after</span><span className="block text-[10px] text-muted-foreground">Clear strengths. One next step.</span></span></div><ArrowRight size={17} className="text-muted-foreground" /></div>
+        </div><div className="absolute -bottom-7 -right-4 rounded-2xl border border-border bg-card px-4 py-3 shadow-lg sm:right-[-24px]"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#f7e7d4] text-[#ad6e32]"><Users size={17} /></span><span><span className="block text-xs font-bold">Practice is better together</span><span className="block text-[10px] text-muted-foreground">Meet registered students</span></span></div></div></div>
+    </section>
+    <section id="how-it-works" className="border-y border-border/70 bg-[#f1f0ea] px-6 py-20"><div className="mx-auto max-w-7xl"><p className="font-mono text-[10px] uppercase tracking-[.2em] text-primary">A little more ready, every day</p><div className="mt-4 grid gap-10 md:grid-cols-[.8fr_1.2fr] md:items-end"><h2 className="max-w-lg font-display text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">A thoughtful way to prepare for what’s next.</h2><p className="max-w-xl text-base leading-7 text-muted-foreground">No pressure to be perfect. Just a private place to practice, get honest feedback, and find a peer who’s on the same path.</p></div><div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3">{[['01','Practice out loud','Realistic role-based questions help you get comfortable with the unexpected.'],['02','See your next step','Useful feedback points to what is working and where to focus next.'],['03','Find your people','Connect with registered peers who are preparing for their own next chapter.']].map(([n,t,d])=><article key={n} className="bg-card p-7 sm:p-9"><span className="font-mono text-xs text-primary">{n} / 03</span><h3 className="mt-8 font-display text-xl font-bold">{t}</h3><p className="mt-3 text-sm leading-6 text-muted-foreground">{d}</p></article>)}</div></div></section>
+    <section className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-6 py-20 sm:flex-row sm:items-center"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-primary">Your next conversation starts here</p><h2 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">You don’t have to figure it out alone.</h2></div><Link href="/sign-up" data-testid="link-create-account-bottom" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground">Create your free account <ArrowRight size={17} /></Link></section>
+    <footer className="border-t border-border px-6 py-6"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"><span>ConnectAI · A better kind of interview practice</span><span>Built for the next step, not the perfect answer.</span></div></footer>
+  </div>;
+}
+function AuthPage({ mode }: { mode: 'in' | 'up' }) { const path = `${basePath}/sign-${mode}`; return <div className="auth-canvas flex min-h-[100dvh] flex-col items-center justify-center gap-6 px-4 py-8"><Link href="/" data-testid="auth-brand-link" className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-primary text-primary-foreground"><MessageCircle size={20} /></span><span className="font-display text-xl font-extrabold">ConnectAI</span></Link><p className="max-w-sm text-center text-sm text-muted-foreground">{mode === 'in' ? 'Welcome back. Your next step is waiting.' : 'A calm place to practice, grow, and meet your people.'}</p>{mode === 'in' ? <SignIn routing="path" path={path} signUpUrl={`${basePath}/sign-up`} /> : <SignUp routing="path" path={path} signInUrl={`${basePath}/sign-in`} />}</div>; }
+function DashboardPage() {
+  const q = useGetDashboard(); const [_, setLocation] = useLocation(); const d = q.data;
+  if (q.isLoading) return <Skeleton />; if (q.isError || !d) return <ErrorState retry={() => q.refetch()} />;
+  return <><PageTitle eyebrow="Your workspace" title={`Good to see you, ${d.profile.name.split(' ')[0]}.`} detail="Small steps add up. Here’s where your preparation stands." action={<Button onClick={() => setLocation('/interviews/new')} testId="button-new-interview"><Plus size={16} />New interview</Button>} />
+    <div className="grid gap-4 sm:grid-cols-3"><Stat label="Practice sessions" value={d.completedInterviews} icon={Target} note="completed interviews" /><Stat label="Average score" value={d.averageScore == null ? '—' : `${Math.round(d.averageScore)}%`} icon={Activity} note={d.averageScore == null ? 'Your first report is one session away' : 'across completed sessions'} /><Stat label="Unread messages" value={d.unreadMessages} icon={MessageSquare} note="from your peer circle" /></div>
+    <div className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_.75fr]"><section className="rounded-2xl border border-border bg-card p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><div><p className="font-mono text-[9px] uppercase tracking-[.18em] text-primary">Your progress</p><h2 className="mt-1 font-display text-xl font-bold">Recent practice</h2></div><Link href="/history" data-testid="link-view-history" className="text-xs font-semibold text-primary hover:underline">See all <ArrowRight size={13} className="inline" /></Link></div>{d.recentInterviews.length ? <div className="divide-y divide-border">{d.recentInterviews.map(it => <Link href={`/interviews/${it.id}`} data-testid={`row-interview-${it.id}`} key={it.id} className="flex items-center justify-between gap-3 py-4 first:pt-1"><div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#f7e7d4] text-[#ad6e32]"><BookOpen size={17} /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold">{it.role}</span><span className="block text-xs text-muted-foreground">{it.interviewType} · {new Date(it.createdAt).toLocaleDateString()}</span></span></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${it.status === 'completed' ? 'bg-[#e4f1e9] text-[#287b67]' : 'bg-[#f7ecd9] text-[#a56b2d]'}`}>{it.status === 'completed' ? 'Reviewed' : 'In progress'}</span></Link>)}</div> : <Empty icon={Mic2} title="Your first practice is waiting" detail="Start a realistic interview and get feedback built around your goals." action={<Button onClick={() => setLocation('/interviews/new')} testId="button-empty-start">Set up an interview <ArrowRight size={15} /></Button>} />}</section>
+      <section className="rounded-2xl bg-sidebar p-6 text-sidebar-foreground"><p className="font-mono text-[9px] uppercase tracking-[.18em] text-sidebar-primary">Stay connected</p><h2 className="mt-2 font-display text-2xl font-bold">Practice, then talk it through.</h2><p className="mt-3 text-sm leading-6 text-sidebar-foreground/65">Find students preparing for their next step, too. A good conversation can make the hard parts feel lighter.</p><Link href="/contacts" data-testid="link-discover-peers" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-sidebar-primary px-4 py-2.5 text-sm font-bold text-sidebar-primary-foreground">Discover peers <ArrowRight size={15} /></Link></section></div>
+    <section className="mt-6 rounded-2xl border border-border bg-card p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="font-mono text-[9px] uppercase tracking-[.18em] text-primary">Your conversations</p><h2 className="mt-1 font-display text-xl font-bold">Peer check-ins</h2></div><Link href="/contacts" data-testid="link-find-more-peers" className="text-xs font-semibold text-primary">Find a peer <ArrowRight size={13} className="ml-1 inline" /></Link></div>{d.conversations.length ? <div className="flex flex-wrap gap-3">{d.conversations.slice(0,4).map(c => <Link key={c.id} href={`/chat/${c.id}`} data-testid={`conversation-card-${c.id}`} className="flex min-w-[220px] flex-1 items-center gap-3 rounded-xl border border-border p-3 hover:bg-muted"><Avatar name={c.participant.name} image={c.participant.imageUrl} online={c.participant.isOnline} /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{c.participant.name}</span><span className="block truncate text-xs text-muted-foreground">{c.lastMessage?.content || 'Start a conversation'}</span></span>{c.unreadCount > 0 && <span className="rounded-full bg-primary px-2 py-1 text-[10px] text-white">{c.unreadCount}</span>}</Link>)}</div> : <p className="rounded-xl bg-muted/70 p-4 text-sm text-muted-foreground">No conversations yet. Browse registered peers when you’re ready.</p>}</section>
+  </>;
+}
+function Stat({ label, value, icon: Icon, note }: { label: string; value: ReactNode; icon: typeof Activity; note: string }) { return <div className="rounded-2xl border border-border bg-card p-5"><div className="flex items-center justify-between"><span className="text-xs font-semibold text-muted-foreground">{label}</span><Icon size={17} className="text-primary" /></div><p className="mt-5 font-display text-3xl font-extrabold tracking-tight">{value}</p><p className="mt-1 text-[11px] text-muted-foreground">{note}</p></div>; }
+function Empty({ icon: Icon, title, detail, action }: { icon: typeof Activity; title: string; detail: string; action?: ReactNode }) { return <div className="flex flex-col items-center py-10 text-center"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e6efeb] text-primary"><Icon size={21} /></span><h3 className="mt-4 font-display text-lg font-bold">{title}</h3><p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{detail}</p>{action && <div className="mt-5">{action}</div>}</div>; }
+function ContactsPage() {
+  const [query, setQuery] = useState(''); const [, setLocation] = useLocation(); const client = useQueryClient();
+  const params = useMemo(() => ({ q: query.trim() }), [query]);
+  const usersQuery = useSearchUsers(params, { query: { enabled: query.trim().length >= 2, queryKey: getSearchUsersQueryKey(params) } });
+  const create = useCreateConversation();
+  const begin = (participantId: string) => create.mutate({ data: { participantId } }, { onSuccess: async conversation => { await client.invalidateQueries({ queryKey: getListConversationsQueryKey() }); setLocation(`/chat/${conversation.id}`); } });
+  return <><PageTitle eyebrow="People, not profiles" title="Find your peer circle." detail="Connect with registered students preparing for their own next step. Reach out when you’re ready." /><label className="mb-6 flex max-w-xl items-center gap-3 rounded-xl border border-input bg-card px-4 py-3 focus-within:ring-2 focus-within:ring-primary"><Search size={17} className="text-muted-foreground" /><input data-testid="input-search-peers" className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name or email" /><span className="font-mono text-[9px] text-muted-foreground">2+ chars</span></label>
+    {query.trim().length < 2 ? <div className="rounded-2xl border border-dashed border-border bg-card/70 px-6 py-16 text-center"><Compass className="mx-auto text-primary" size={25} /><h2 className="mt-4 font-display text-lg font-bold">Start with a name</h2><p className="mt-2 text-sm text-muted-foreground">Search for a registered student to find someone to compare notes with.</p></div> : usersQuery.isLoading ? <Skeleton rows={4} /> : usersQuery.isError ? <ErrorState retry={() => usersQuery.refetch()} /> : usersQuery.data?.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{usersQuery.data.map(person => <article key={person.id} data-testid={`peer-card-${person.id}`} className="rounded-2xl border border-border bg-card p-5 transition hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-start gap-3"><Avatar name={person.name} image={person.imageUrl} online={person.isOnline} /><div className="min-w-0 flex-1"><h2 className="truncate font-display font-bold">{person.name}</h2><p className="text-xs text-muted-foreground">{person.isOnline ? 'Online now' : person.lastSeen ? `Active ${new Date(person.lastSeen).toLocaleDateString()}` : 'Registered student'}</p></div></div><p className="mt-4 min-h-10 text-sm leading-5 text-muted-foreground">{person.bio || 'Still writing their intro. Say hello and start a conversation.'}</p><Button kind="secondary" disabled={create.isPending} onClick={() => begin(person.id)} testId={`button-message-${person.id}`}><MessageCircle size={15} />Start a conversation</Button></article>)}</div> : <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center"><Users className="mx-auto text-primary" size={25} /><h2 className="mt-4 font-display text-lg font-bold">No one by that name yet</h2><p className="mt-2 text-sm text-muted-foreground">Try a shorter search or check the spelling.</p></div>}
+    {create.isError && <p role="alert" className="mt-4 text-sm text-destructive">We couldn’t start that conversation. Please try again.</p>}</>;
+}
+function ChatPage() {
+  const params = useParams<{ conversationId: string }>(); const conversationId = Number(params.conversationId);
+  const client = useQueryClient(); const { data: conversations } = useListConversations();
+  const conversation = conversations?.find(item => item.id === conversationId);
+  const messagesQuery = useListMessages(conversationId);
+  const [content, setContent] = useState(''); const [olderBefore, setOlderBefore] = useState<number | null>(null);
+  const older = useListOlderMessages(conversationId, olderBefore ?? 0, { query: { enabled: olderBefore !== null, queryKey: getListOlderMessagesQueryKey(conversationId, olderBefore ?? 0) } });
+  const send = useSendMessage(); const remove = useDeleteMessage(); const profile = useGetMe();
+  useEffect(() => {
+    if (!Number.isFinite(conversationId)) return;
+    const source = new EventSource(`/api/conversations/${conversationId}/events`);
+    source.onmessage = () => { void client.invalidateQueries({ queryKey: getListMessagesQueryKey(conversationId) }); void client.invalidateQueries({ queryKey: getListConversationsQueryKey() }); };
+    source.onerror = () => source.close();
+    return () => source.close();
+  }, [conversationId, client]);
+  const messages = messagesQuery.data?.items || [];
+  const loadOlder = () => { const first = messages[0]; if (first) setOlderBefore(first.id); };
+  useEffect(() => {
+    if (older.data?.items?.length) {
+      client.setQueryData(getListMessagesQueryKey(conversationId), (current: { items: Message[]; nextBeforeId: number | null } | undefined) =>
+        current ? { ...current, items: [...older.data.items, ...current.items], nextBeforeId: older.data.nextBeforeId } : current);
+      setOlderBefore(null);
+    }
+  }, [older.data, client, conversationId]);
+  const submit = (e: React.FormEvent) => { e.preventDefault(); const text = content.trim(); if (!text) return; send.mutate({ conversationId, data: { content: text } }, { onSuccess: async () => { setContent(''); await client.invalidateQueries({ queryKey: getListMessagesQueryKey(conversationId) }); await client.invalidateQueries({ queryKey: getListConversationsQueryKey() }); } }); };
+  if (!Number.isFinite(conversationId)) return <ErrorState retry={() => {}} />;
+  return <div className="mx-auto max-w-4xl"><Link href="/dashboard" data-testid="link-back-dashboard" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} />Back to workspace</Link><section className="overflow-hidden rounded-2xl border border-border bg-card">
+    <header className="flex items-center gap-3 border-b border-border px-5 py-4"><Avatar name={conversation?.participant.name || 'Peer'} image={conversation?.participant.imageUrl} online={conversation?.participant.isOnline} /><div className="min-w-0 flex-1"><h1 className="font-display font-bold">{conversation?.participant.name || 'Conversation'}</h1><p className="text-xs text-muted-foreground">{conversation?.participant.isOnline ? 'Online now' : 'A private conversation'}</p></div><span className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><LockKeyhole size={12} />Private</span></header>
+    <div className="flex min-h-[390px] max-h-[62vh] flex-col overflow-y-auto bg-[#f7f6f1] p-4 sm:p-6" aria-live="polite" data-testid="message-list">{messagesQuery.isLoading ? <Skeleton rows={3} /> : messagesQuery.isError ? <ErrorState retry={() => messagesQuery.refetch()} /> : <>{messagesQuery.data?.nextBeforeId && <button data-testid="button-load-older" onClick={loadOlder} disabled={older.isFetching} className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground"><ArrowDown size={13} />{older.isFetching ? 'Loading…' : 'Load older messages'}</button>}{messages.length ? messages.map(message => { const mine = message.senderId === profile.data?.id; return <div key={message.id} data-testid={`message-${message.id}`} className={`group mb-3 flex ${mine ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${mine ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border border-border bg-card'}`}><p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p><div className={`mt-1 flex items-center justify-end gap-2 text-[9px] ${mine ? 'text-primary-foreground/65' : 'text-muted-foreground'}`}><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>{mine && <button data-testid={`button-delete-message-${message.id}`} onClick={() => { if (window.confirm('Delete this message?')) remove.mutate({ messageId: message.id }, { onSuccess: () => client.invalidateQueries({ queryKey: getListMessagesQueryKey(conversationId) }) }); }} aria-label="Delete your message" className="opacity-0 transition group-hover:opacity-100"><Trash2 size={11} /></button>}</div></div></div>; }) : <div className="m-auto max-w-sm py-10 text-center"><MessageCircle className="mx-auto text-primary" size={25} /><h2 className="mt-3 font-display font-bold">Say hello, when you’re ready.</h2><p className="mt-1 text-sm text-muted-foreground">A simple check-in is a good place to start.</p></div>}</>}</div>
+    <form onSubmit={submit} className="flex items-end gap-3 border-t border-border bg-card p-4"><label className="sr-only" htmlFor="chat-message">Write a message</label><textarea id="chat-message" data-testid="input-chat-message" value={content} onChange={e => setContent(e.target.value)} maxLength={4000} rows={1} placeholder="Write a thoughtful message…" className="max-h-32 min-h-11 flex-1 resize-y rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary" /><Button type="submit" disabled={!content.trim() || send.isPending} testId="button-send-message">{send.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Send size={16} />}<span className="hidden sm:inline">Send</span></Button></form>
+    {send.isError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">Message not sent. Please try again.</p>}</section></div>;
+}
+function HistoryPage() {
+  const query = useListInterviews(); const client = useQueryClient(); const remove = useDeleteInterview(); const [, setLocation] = useLocation();
+  if (query.isLoading) return <Skeleton rows={5} />; if (query.isError || !query.data) return <ErrorState retry={() => query.refetch()} />;
+  return <><PageTitle eyebrow="Every step counts" title="Interview history." detail="Review your practice sessions and revisit the feedback whenever you need it." action={<Button onClick={() => setLocation('/interviews/new')} testId="button-history-new-interview"><Plus size={16} />New interview</Button>} />{query.data.length ? <div className="overflow-hidden rounded-2xl border border-border bg-card"><div className="hidden grid-cols-[1.4fr_1fr_.8fr_.7fr_auto] gap-4 border-b border-border bg-muted/60 px-5 py-3 font-mono text-[9px] uppercase tracking-[.14em] text-muted-foreground sm:grid"><span>Role</span><span>Format</span><span>Date</span><span>State</span><span /></div>{query.data.map(it => <div key={it.id} data-testid={`history-row-${it.id}`} className="flex flex-col gap-3 border-b border-border p-4 last:border-0 sm:grid sm:grid-cols-[1.4fr_1fr_.8fr_.7fr_auto] sm:items-center sm:gap-4 sm:px-5"><Link href={`/interviews/${it.id}`} data-testid={`link-interview-report-${it.id}`} className="font-semibold hover:text-primary">{it.role}</Link><span className="text-xs text-muted-foreground">{it.interviewType} · {it.difficulty}</span><span className="text-xs text-muted-foreground">{new Date(it.createdAt).toLocaleDateString()}</span><span className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-semibold ${it.status === 'completed' ? 'bg-[#e4f1e9] text-[#287b67]' : 'bg-[#f7ecd9] text-[#a56b2d]'}`}>{it.status === 'completed' ? 'Completed' : 'In progress'}</span><div className="flex gap-2"><Link href={`/interviews/${it.id}`} data-testid={`button-open-interview-${it.id}`} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-muted">{it.status === 'completed' ? 'View report' : 'Continue'}</Link><button data-testid={`button-delete-interview-${it.id}`} aria-label={`Delete ${it.role} interview`} onClick={() => { if (window.confirm('Delete this interview and its report?')) remove.mutate({ interviewId: it.id }, { onSuccess: () => client.invalidateQueries({ queryKey: getListInterviewsQueryKey() }) }); }} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={15} /></button></div></div>)}</div> : <div className="rounded-2xl border border-border bg-card p-6"><Empty icon={BookOpen} title="A blank page, full of possibility" detail="Your interview reports will live here after your first session." action={<Button onClick={() => setLocation('/interviews/new')} testId="button-history-empty-start">Set up your first interview <ArrowRight size={15} /></Button>} /></div>}</>;
+}
+function NewInterviewPage() {
+  const create = useCreateInterview(); const [, setLocation] = useLocation(); const client = useQueryClient();
+  const [form, setForm] = useState<InterviewInput>({ role: '', experienceLevel: 'Fresher', interviewType: 'Technical', difficulty: 'Medium', questionCount: 5, language: 'English' });
+  const set = (key: keyof InterviewInput, value: string | number) => setForm(prev => ({ ...prev, [key]: value } as InterviewInput));
+  const submit = (e: React.FormEvent) => { e.preventDefault(); if (!form.role.trim()) return; create.mutate({ data: { ...form, role: form.role.trim() } }, { onSuccess: async interview => { await client.invalidateQueries({ queryKey: getListInterviewsQueryKey() }); setLocation(`/interviews/${interview.id}`); } }); };
+  return <><Link href="/dashboard" data-testid="link-interview-back" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} />Workspace</Link><PageTitle eyebrow="Make it yours" title="Set up your interview." detail="Choose the role and format you’re preparing for. We’ll take it from there." /><div className="grid gap-6 lg:grid-cols-[1fr_310px]"><form onSubmit={submit} className="space-y-5 rounded-2xl border border-border bg-card p-5 sm:p-7"><label className="block"><span className="mb-2 block text-sm font-semibold">Role you’re preparing for</span><input data-testid="input-interview-role" required maxLength={80} value={form.role} onChange={e => set('role', e.target.value)} placeholder="e.g. Software Engineer" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary" /></label>
+    <div className="grid gap-4 sm:grid-cols-2">{[['experienceLevel','Experience level',['Fresher','Intermediate','Experienced']],['interviewType','Interview focus',['Technical','HR','Communication','Behavioral','Mixed']],['difficulty','Difficulty',['Easy','Medium','Hard']],['questionCount','Number of questions',[5,10,15]]].map(([key,title,opts])=><label key={key as string} className="block"><span className="mb-2 block text-sm font-semibold">{title as string}</span><select data-testid={`select-${key}`} value={String(form[key as keyof InterviewInput])} onChange={e => set(key as keyof InterviewInput, key === 'questionCount' ? Number(e.target.value) : e.target.value)} className="w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-primary">{(opts as (string|number)[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></label>)}</div>
+    <label className="block max-w-sm"><span className="mb-2 block text-sm font-semibold">Language</span><input data-testid="input-interview-language" required minLength={2} maxLength={60} value={form.language} onChange={e => set('language', e.target.value)} className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary" /></label>
+    {create.isError && <p role="alert" className="text-sm text-destructive">We couldn’t start your interview. Your setup is still here—please try again.</p>}<Button type="submit" disabled={!form.role.trim() || create.isPending} testId="button-start-interview">{create.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Mic2 size={16} />}Start interview</Button></form>
+    <aside className="h-fit rounded-2xl bg-sidebar p-6 text-sidebar-foreground"><span className="grid h-10 w-10 place-items-center rounded-xl bg-sidebar-primary/20 text-sidebar-primary"><ShieldCheck size={18} /></span><h2 className="mt-4 font-display text-lg font-bold">A safe place to practice</h2><p className="mt-2 text-sm leading-6 text-sidebar-foreground/65">Take your time with every answer. When you finish, you’ll get a private report with strengths and clear next steps.</p><div className="mt-5 flex items-center gap-2 border-t border-sidebar-border pt-4 text-xs text-sidebar-foreground/60"><LockKeyhole size={13} />Your practice is private.</div></aside></div></>;
+}
+function InterviewPage() {
+  const params = useParams<{ interviewId: string }>(); const id = Number(params.interviewId); const query = useGetInterview(id, { query: { queryKey: getGetInterviewQueryKey(id), enabled: Number.isFinite(id) } });
+  const save = useSubmitInterviewAnswer(); const complete = useCompleteInterview(); const client = useQueryClient(); const [index, setIndex] = useState(0); const [answer, setAnswer] = useState('');
+  useEffect(() => { const a = query.data?.answers.find(x => x.questionId === query.data?.questions[index]?.id); setAnswer(a?.answer || ''); }, [query.data?.id, index]);
+  if (query.isLoading) return <Skeleton rows={3} />; if (query.isError || !query.data) return <ErrorState retry={() => query.refetch()} />;
+  const interview = query.data; const question = interview.questions[index]; const submitted = interview.answers.find(x => x.questionId === question?.id);
+  const saveAnswer = () => { if (!question) return; save.mutate({ interviewId: id, data: { questionId: question.id, answer } }, { onSuccess: updated => client.setQueryData(getGetInterviewQueryKey(id), updated) }); };
+  const finish = () => {
+    const completeNow = () => complete.mutate({ interviewId: id }, { onSuccess: updated => { client.setQueryData(getGetInterviewQueryKey(id), updated); void client.invalidateQueries({ queryKey: getListInterviewsQueryKey() }); } });
+    if (question && answer.trim() && answer !== submitted?.answer) {
+      save.mutate({ interviewId: id, data: { questionId: question.id, answer } }, { onSuccess: updated => { client.setQueryData(getGetInterviewQueryKey(id), updated); completeNow(); } });
+    } else completeNow();
+  };
+  if (interview.report) return <ReportView interview={interview} />;
+  return <><Link href="/history" data-testid="link-interview-history" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground"><ArrowLeft size={16} />Interview history</Link><PageTitle eyebrow={`${interview.interviewType} · ${interview.difficulty}`} title={interview.role} detail={`Question ${index + 1} of ${interview.questions.length} · ${interview.experienceLevel}`} />
+    <div className="mx-auto max-w-3xl"><div className="mb-4 flex items-center justify-between text-xs text-muted-foreground"><span className="font-mono">QUESTION {String(index + 1).padStart(2,'0')} / {String(interview.questions.length).padStart(2,'0')}</span><span className="flex items-center gap-1.5"><Clock3 size={13} />Take a breath. There’s no timer.</span></div><div className="mb-5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{width:`${((index+1)/interview.questions.length)*100}%`}} /></div>
+      <section className="rounded-2xl border border-border bg-card p-6 sm:p-9"><p className="font-mono text-[9px] uppercase tracking-[.18em] text-primary">{question?.category || 'Interview question'}</p><h2 data-testid="text-interview-question" className="mt-4 font-display text-2xl font-bold leading-9 sm:text-3xl">{question?.question || 'No question available.'}</h2><label className="mt-8 block"><span className="mb-2 block text-xs font-semibold text-muted-foreground">Your answer</span><textarea data-testid="input-interview-answer" rows={9} maxLength={12000} value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Gather your thoughts, then write it as you might say it out loud…" className="w-full resize-y rounded-xl border border-input bg-background p-4 text-sm leading-6 outline-none focus:ring-2 focus:ring-primary" /><span className="mt-1 block text-right text-[10px] text-muted-foreground">{answer.length} / 12,000</span></label>
+        {(save.isError || complete.isError) && <p role="alert" className="mb-3 text-sm text-destructive">That didn’t save. Please try again.</p>}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><Button kind="quiet" disabled={index===0} onClick={() => setIndex(i => Math.max(0,i-1))} testId="button-previous-question"><ArrowLeft size={15} />Previous</Button><div className="flex flex-wrap gap-2">{index < interview.questions.length-1 ? <><Button kind="secondary" disabled={save.isPending || !answer.trim()} onClick={saveAnswer} testId="button-save-answer">{save.isPending ? 'Saving…' : submitted ? 'Update answer' : 'Save answer'}</Button><Button onClick={() => { saveAnswer(); setIndex(i => Math.min(interview.questions.length-1,i+1)); }} disabled={!answer.trim()} testId="button-next-question">Next question <ArrowRight size={15} /></Button></> : <Button onClick={finish} disabled={complete.isPending} testId="button-complete-interview">{complete.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}Finish & get feedback</Button>}</div></div>
+      </section><p className="mt-4 text-center text-xs text-muted-foreground">Your answers are only used to create your private feedback report.</p></div></>;
+}
+function ReportView({ interview }: { interview: Interview }) {
+  const report = interview.report; if (!report) return null;
+  return <><Link href="/history" data-testid="link-report-history" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground"><ArrowLeft size={16} />Interview history</Link><PageTitle eyebrow="A little stronger each time" title="Your practice report." detail={`${interview.role} · ${new Date(interview.completedAt || interview.createdAt).toLocaleDateString()}`} />
+    <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]"><section className="rounded-2xl bg-sidebar p-7 text-sidebar-foreground"><p className="font-mono text-[9px] uppercase tracking-[.18em] text-sidebar-primary">Overall score</p><div className="mt-4 flex items-end gap-2"><strong data-testid="text-overall-score" className="font-display text-7xl font-extrabold tracking-tight">{Math.round(report.overallScore)}</strong><span className="mb-2 text-xl text-sidebar-foreground/50">/100</span></div><div className="mt-5 space-y-4">{report.categoryScores.map(score => <div key={score.category}><div className="mb-1.5 flex justify-between text-xs"><span>{score.category}</span><span className="font-mono">{Math.round(score.score)}</span></div><div className="h-1.5 rounded-full bg-sidebar-accent"><div className="h-1.5 rounded-full bg-sidebar-primary" style={{width:`${Math.min(100,Math.max(0,score.score))}%`}} /></div><p className="mt-1 text-[10px] text-sidebar-foreground/55">{score.reason}</p></div>)}</div></section>
+      <div className="space-y-5"><div className="grid gap-4 sm:grid-cols-2"><ReportList title="What’s working" items={report.strengths} color="green" /><ReportList title="Room to grow" items={report.weakAreas} color="amber" /></div><section className="rounded-2xl border border-border bg-card p-5"><p className="font-mono text-[9px] uppercase tracking-[.18em] text-primary">Communication</p><h2 className="mt-1 font-display text-lg font-bold">How you came across</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">{report.communicationFeedback}</p></section></div></div>
+    {report.answerFeedback.length > 0 && <section className="mt-6 rounded-2xl border border-border bg-card p-5 sm:p-7"><p className="font-mono text-[9px] uppercase tracking-[.18em] text-primary">Answer notes</p><h2 className="mb-4 mt-1 font-display text-xl font-bold">Specific feedback to keep</h2><div className="space-y-4">{report.answerFeedback.map((f,i)=><details key={f.questionId} className="group rounded-xl border border-border p-4" open={i===0}><summary className="cursor-pointer list-none font-semibold"><span className="mr-2 font-mono text-[10px] text-primary">0{i+1}</span>{interview.questions.find(q=>q.id===f.questionId)?.question || `Question ${i+1}`}</summary><p className="mt-3 text-sm leading-6 text-muted-foreground">{f.feedback}</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><ReportList title="Keep doing" items={f.strengths} color="green" /><ReportList title="Try next time" items={f.improvements} color="amber" /></div>{f.suggestedAnswer && <details className="mt-3 rounded-lg bg-muted p-3"><summary className="cursor-pointer text-xs font-semibold">See an example answer</summary><p className="mt-2 text-sm leading-6 text-muted-foreground">{f.suggestedAnswer}</p></details>}</details>)}</div></section>}
+    <div className="mt-6 grid gap-5 lg:grid-cols-2"><ReportList title="Concepts to revisit" items={report.conceptsToReview} color="plain" /><ReportList title="Questions to explore next" items={report.recommendedQuestions} color="plain" /></div>{report.sevenDayPlan.length > 0 && <section className="mt-6 rounded-2xl border border-border bg-card p-5 sm:p-7"><p className="font-mono text-[9px] uppercase tracking-[.18em] text-primary">One week, one step at a time</p><h2 className="mt-1 font-display text-xl font-bold">Your 7-day plan</h2><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{report.sevenDayPlan.map(day=><article key={day.day} className="rounded-xl bg-muted/70 p-4"><p className="font-mono text-[9px] uppercase tracking-[.15em] text-primary">Day {day.day}</p><h3 className="mt-2 text-sm font-bold">{day.focus}</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">{day.activity}</p></article>)}</div></section>}<p className="mt-5 text-xs leading-5 text-muted-foreground">{report.disclaimer}</p></>;
+}
+function ReportList({ title, items, color }: { title: string; items: string[]; color: 'green'|'amber'|'plain' }) { return <section className="rounded-2xl border border-border bg-card p-5"><h3 className="font-display font-bold">{title}</h3>{items.length ? <ul className="mt-3 space-y-2">{items.map((item,i)=><li key={`${i}-${item}`} className="flex gap-2 text-sm leading-5 text-muted-foreground"><span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${color==='green'?'bg-primary':color==='amber'?'bg-[#d18a43]':'bg-foreground/40'}`} />{item}</li>)}</ul> : <p className="mt-2 text-xs text-muted-foreground">No notes for this section yet.</p>}</section>; }
+function AssistantPage() {
+  const ask = useAskAssistant(); const [prompt, setPrompt] = useState(''); const [turns, setTurns] = useState<{question:string;answer:string}[]>([]);
+  const submit = (e: React.FormEvent) => { e.preventDefault(); const message = prompt.trim(); if (!message) return; ask.mutate({ data: { message } }, { onSuccess: result => { setTurns(prev => [...prev, { question: message, answer: result.response }]); setPrompt(''); } }); };
+  return <><PageTitle eyebrow="A friendly sounding board" title="Meet your prep assistant." detail="Ask a specific question about interviews, answers, or what to practice next. No question is too small." />
+    <div className="grid gap-6 lg:grid-cols-[.72fr_1.28fr]"><aside className="h-fit rounded-2xl bg-sidebar p-6 text-sidebar-foreground"><span className="grid h-10 w-10 place-items-center rounded-xl bg-sidebar-primary/20 text-sidebar-primary"><Sparkles size={18} /></span><h2 className="mt-4 font-display text-lg font-bold">A little direction goes a long way.</h2><p className="mt-2 text-sm leading-6 text-sidebar-foreground/65">Your assistant is here to make interview prep feel more manageable, one useful answer at a time.</p><p className="mt-5 border-t border-sidebar-border pt-4 font-mono text-[9px] uppercase leading-5 tracking-[.12em] text-sidebar-foreground/50">Try asking</p>{['How do I structure a strong behavioral answer?','What should I ask at the end of an interview?','Help me prepare for a technical screening'].map((suggestion,i)=><button key={suggestion} data-testid={`button-assistant-suggestion-${i}`} onClick={() => setPrompt(suggestion)} className="mt-2 block w-full rounded-xl border border-sidebar-border px-3 py-2.5 text-left text-xs leading-5 text-sidebar-foreground/75 hover:bg-sidebar-accent">{suggestion}</button>)}</aside>
+      <section className="overflow-hidden rounded-2xl border border-border bg-card"><div className="flex min-h-[360px] max-h-[62vh] flex-col gap-4 overflow-y-auto bg-[#f7f6f1] p-4 sm:p-6" data-testid="assistant-conversation">{turns.length ? turns.map((turn,i)=><div key={i} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground">{turn.question}</div><div className="max-w-[90%] rounded-2xl rounded-bl-md border border-border bg-card px-4 py-3 text-sm leading-6">{turn.answer}</div></div>) : <div className="m-auto max-w-sm py-10 text-center"><Sparkles className="mx-auto text-primary" size={25} /><h2 className="mt-3 font-display font-bold">What’s on your mind?</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Tell me where you’re stuck, and we’ll work through it together.</p></div>}{ask.isPending && <div className="flex items-center gap-2 text-xs text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary" />Thinking it through…</div>}</div>
+        <form onSubmit={submit} className="flex items-end gap-3 border-t border-border p-4"><label className="sr-only" htmlFor="assistant-prompt">Ask the assistant</label><textarea id="assistant-prompt" data-testid="input-assistant-prompt" rows={2} maxLength={4000} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Ask about your next interview…" className="min-h-12 flex-1 resize-y rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary" /><Button type="submit" disabled={!prompt.trim() || ask.isPending} testId="button-ask-assistant">{ask.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Send size={16} />}<span className="hidden sm:inline">Ask</span></Button></form>{ask.isError && <p role="alert" className="px-4 pb-3 text-xs text-destructive">We couldn’t get an answer. Please try again.</p>}</section></div></>;
+}
+function ProfilePage() {
+  const query = useGetMe(); const update = useUpdateMe(); const client = useQueryClient(); const [bio,setBio]=useState(''); const [online,setOnline]=useState(true); const [visible,setVisible]=useState(true); const [initialId,setInitialId]=useState('');
+  useEffect(()=>{ if(query.data && initialId!==query.data.id){ setInitialId(query.data.id); setBio(query.data.bio); setOnline(query.data.showOnlineStatus); setVisible(query.data.profileVisibility); } },[query.data,initialId]);
+  if(query.isLoading) return <Skeleton rows={2} />; if(query.isError || !query.data) return <ErrorState retry={()=>query.refetch()} />;
+  const save=(e:React.FormEvent)=>{ e.preventDefault(); update.mutate({data:{bio,showOnlineStatus:online,profileVisibility:visible}}, {onSuccess: async profile=>{ client.setQueryData(getGetMeQueryKey(),profile); await client.invalidateQueries({queryKey:getGetDashboardQueryKey()}); }}); };
+  return <><PageTitle eyebrow="Your space, your choices" title="Profile & privacy." detail="Share what feels useful. You’re always in control of how you show up." /><form onSubmit={save} className="max-w-3xl overflow-hidden rounded-2xl border border-border bg-card"><div className="flex items-center gap-4 border-b border-border bg-[#f1f0ea] p-5 sm:p-7"><Avatar name={query.data.name} image={query.data.imageUrl} /><div><h2 className="font-display text-lg font-bold">{query.data.name}</h2><p className="text-sm text-muted-foreground">{query.data.email}</p></div><span className="ml-auto rounded-full bg-primary/10 px-3 py-1.5 text-[10px] font-semibold text-primary">Registered student</span></div><div className="space-y-6 p-5 sm:p-7"><label className="block"><span className="mb-2 block text-sm font-semibold">A little about you</span><textarea data-testid="input-profile-bio" maxLength={240} rows={4} value={bio} onChange={e=>setBio(e.target.value)} placeholder="What are you studying or preparing for?" className="w-full resize-y rounded-xl border border-input bg-background p-4 text-sm leading-6 outline-none focus:ring-2 focus:ring-primary" /><span className="mt-1 block text-right text-[10px] text-muted-foreground">{bio.length} / 240</span></label><PrivacyToggle testId="toggle-online-status" icon={Activity} title="Show online status" detail="Let peers know when you’re available to chat." checked={online} onChange={setOnline} /><PrivacyToggle testId="toggle-profile-visibility" icon={Users} title="Visible to registered peers" detail="Allow your profile to appear in peer search." checked={visible} onChange={setVisible} /><div className="flex items-center gap-2 border-t border-border pt-5"><LockKeyhole size={14} className="text-primary" /><p className="text-xs text-muted-foreground">Your profile is only visible within ConnectAI.</p></div>{update.isError && <p role="alert" className="text-sm text-destructive">We couldn’t save your changes. Please try again.</p>}{update.isSuccess && <p role="status" className="text-sm font-medium text-primary">Your profile is up to date.</p>}<Button type="submit" disabled={update.isPending} testId="button-save-profile">{update.isPending ? 'Saving…' : 'Save changes'}<Check size={15} /></Button></div></form></>;
+}
+function PrivacyToggle({testId,icon:Icon,title,detail,checked,onChange}:{testId:string;icon:typeof Activity;title:string;detail:string;checked:boolean;onChange:(v:boolean)=>void}) { return <label className="flex cursor-pointer items-center gap-4 rounded-xl border border-border p-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#e6efeb] text-primary"><Icon size={17}/></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{detail}</span></span><input data-testid={testId} type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)} className="h-5 w-5 accent-[#287b67]"/></label>; }
+function Guarded({ component: Component }: { component: () => ReactNode }) { return <AuthOnly><PortalShell><Component /></PortalShell></AuthOnly>; }
+function RoutedErrorBoundary({ children }: { children: ReactNode }) { const [location] = useLocation(); return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>; }
 function Router() {
-  return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
-  );
+  return <RoutedErrorBoundary><Switch>
+    <Route path="/" component={HomeRedirect} />
+    <Route path="/sign-in/*?" component={() => <AuthPage mode="in" />} />
+    <Route path="/sign-up/*?" component={() => <AuthPage mode="up" />} />
+    <Route path="/dashboard" component={() => <Guarded component={DashboardPage} />} />
+    <Route path="/contacts" component={() => <Guarded component={ContactsPage} />} />
+    <Route path="/chat/:conversationId" component={() => <Guarded component={ChatPage} />} />
+    <Route path="/interviews/new" component={() => <Guarded component={NewInterviewPage} />} />
+    <Route path="/interviews/:interviewId" component={() => <Guarded component={InterviewPage} />} />
+    <Route path="/history" component={() => <Guarded component={HistoryPage} />} />
+    <Route path="/assistant" component={() => <Guarded component={AssistantPage} />} />
+    <Route path="/profile" component={() => <Guarded component={ProfilePage} />} />
+    <Route component={NotFound} />
+  </Switch></RoutedErrorBoundary>;
 }
-
-function RoutedErrorBoundary({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk(); const client = useQueryClient(); const prevUserIdRef = useMemo(() => ({ value: undefined as string | null | undefined }), []);
+  useEffect(() => { const unsubscribe = addListener(({ user }) => { const userId = user?.id ?? null; if (prevUserIdRef.value !== undefined && prevUserIdRef.value !== userId) client.clear(); prevUserIdRef.value = userId; }); return unsubscribe; }, [addListener, client, prevUserIdRef]);
+  return null;
 }
-
-function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
-  );
+function ClerkProviderWithRoutes() {
+  const [, setLocation] = useLocation();
+  return <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={clerkAppearance} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}
+    localization={{ signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to pick up where you left off.' } }, signUp: { start: { title: 'Create your ConnectAI account', subtitle: 'A good next step starts with a little practice.' } } }}
+    routerPush={to => setLocation(stripBase(to))} routerReplace={to => setLocation(stripBase(to), { replace: true })}>
+    <QueryClientProvider client={queryClient}><ClerkQueryClientCacheInvalidator /><Router /><Toaster /></QueryClientProvider>
+  </ClerkProvider>;
 }
-
+function App() { return <TooltipProvider><WouterRouter base={basePath}><ClerkProviderWithRoutes /></WouterRouter></TooltipProvider>; }
 export default App;

@@ -1,15 +1,16 @@
-# [Project name]
+# ConnectAI
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+ConnectAI helps college students prepare for placement interviews with peer messaging, AI mock interviews, saved feedback, and progress tracking.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/connectai run dev` — run the web app (workflow supplies `PORT` and `BASE_PATH`)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required managed env: `DATABASE_URL`, Clerk keys, and `GEMINI_API_KEY`
 
 ## Stack
 
@@ -19,26 +20,32 @@ _Replace the heading above with the project's name, and this line with one sente
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
+- Auth: Replit-managed Clerk; browser API calls use same-origin session cookies
+- AI: Gemini API through the server-side `@google/genai` client
+- Live chat updates: authenticated Server-Sent Events
 
 ## Where things live
-
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/connectai` — React + Vite user-facing app
+- `artifacts/api-server` — shared Express API and Clerk middleware
+- `lib/api-spec/openapi.yaml` — API contract source of truth
+- `lib/db/src/schema/connectai.ts` — persistent user, conversation, message, and interview models
 
 ## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- PostgreSQL is the app database; do not add a second database for the initial product.
+- Clerk session cookies authenticate web requests; never add browser-side bearer tokens.
+- Gemini calls stay on the API server and use `GEMINI_API_KEY` from Replit Secrets.
+- Interview scores must be generated from saved answers and presented as estimates, not as objective measures of a person.
 
 ## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
+The audience is college students preparing for job placements. The product combines peer support with practice interviews, saved feedback, and learning progress.
 
 ## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
+Keep the code beginner-friendly and document setup steps in plain language. Prioritize a real, demonstrable full-stack app over a static mockup.
 
 ## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Enable Google SSO in the Replit Auth pane for Google sign-in; the app never accesses Gmail.
+- Run API codegen after changing OpenAPI, then run the API server typecheck.
+- Development and published Clerk accounts are separate.
 
 ## Pointers
 

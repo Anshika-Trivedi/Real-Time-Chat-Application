@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ConnectAI user, messaging, and interview API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: Profiles and contact discovery
+  - name: dashboard
+    description: User progress overview
+  - name: conversations
+    description: Private conversations and messages
+  - name: interviews
+    description: AI mock interviews and reports
+  - name: assistant
+    description: Interview preparation assistant
 paths:
   /healthz:
     get:
@@ -24,7 +34,371 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get the current user's profile
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Current profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update profile preferences
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /users/search:
+    get:
+      operationId: searchUsers
+      tags: [users]
+      summary: Search registered users by name or email
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+      responses:
+        "200":
+          description: Matching registered users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummary"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard statistics and recent activity
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Dashboard information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: List the current user's conversations
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Conversations ordered by latest activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+    post:
+      operationId: createConversation
+      tags: [conversations]
+      summary: Start a conversation with a registered user
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationInput"
+      responses:
+        "201":
+          description: Created or existing conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: listMessages
+      tags: [conversations]
+      summary: Load messages for a conversation
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated message history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePage"
+    post:
+      operationId: sendMessage
+      tags: [conversations]
+      summary: Send a message
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /conversations/{conversationId}/messages/before/{beforeId}:
+    get:
+      operationId: listOlderMessages
+      tags: [conversations]
+      summary: Load an older page of messages
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - in: path
+          name: beforeId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Older messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePage"
+  /conversations/{conversationId}/events:
+    get:
+      operationId: streamConversationEvents
+      tags: [conversations]
+      summary: Subscribe to new conversation messages
+      description: Server-sent events stream. The browser should use EventSource with same-origin credentials.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Message event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /messages/{messageId}:
+    delete:
+      operationId: deleteMessage
+      tags: [conversations]
+      summary: Delete one of the current user's messages
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: messageId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "204":
+          description: Message deleted
+  /interviews:
+    get:
+      operationId: listInterviews
+      tags: [interviews]
+      summary: List the current user's interview history
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Saved interviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Interview"
+    post:
+      operationId: createInterview
+      tags: [interviews]
+      summary: Create an AI mock interview
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewInput"
+      responses:
+        "201":
+          description: New interview with generated questions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interview"
+  /interviews/{interviewId}:
+    get:
+      operationId: getInterview
+      tags: [interviews]
+      summary: Get one of the current user's interviews
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: interviewId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Interview details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interview"
+    delete:
+      operationId: deleteInterview
+      tags: [interviews]
+      summary: Delete one of the current user's interviews
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: interviewId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "204":
+          description: Interview deleted
+  /interviews/{interviewId}/answers:
+    post:
+      operationId: submitInterviewAnswer
+      tags: [interviews]
+      summary: Save an answer to an interview question
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: interviewId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewAnswerInput"
+      responses:
+        "200":
+          description: Updated interview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interview"
+  /interviews/{interviewId}/complete:
+    post:
+      operationId: completeInterview
+      tags: [interviews]
+      summary: Generate an AI evaluation report
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: interviewId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Completed interview with an AI evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Interview"
+  /assistant/chat:
+    post:
+      operationId: askAssistant
+      tags: [assistant]
+      summary: Ask the AI interview preparation assistant
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantInput"
+      responses:
+        "200":
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantResponse"
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __session
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +407,203 @@ components:
           type: string
       required:
         - status
+    Profile:
+      type: object
+      required: [id, name, email, imageUrl, bio, createdAt, showOnlineStatus, profileVisibility]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        imageUrl: { type: ["string", "null"] }
+        bio: { type: string }
+        createdAt: { type: string, format: date-time }
+        showOnlineStatus: { type: boolean }
+        profileVisibility: { type: boolean }
+    ProfileUpdate:
+      type: object
+      properties:
+        bio: { type: string, maxLength: 240 }
+        showOnlineStatus: { type: boolean }
+        profileVisibility: { type: boolean }
+    UserSummary:
+      type: object
+      required: [id, name, email, imageUrl, bio, isOnline, lastSeen]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        imageUrl: { type: ["string", "null"] }
+        bio: { type: string }
+        isOnline: { type: boolean }
+        lastSeen: { type: ["string", "null"], format: date-time }
+    Dashboard:
+      type: object
+      required: [profile, completedInterviews, averageScore, unreadMessages, recentInterviews, conversations]
+      properties:
+        profile: { $ref: "#/components/schemas/Profile" }
+        completedInterviews: { type: integer }
+        averageScore: { type: ["number", "null"] }
+        unreadMessages: { type: integer }
+        recentInterviews:
+          type: array
+          items: { $ref: "#/components/schemas/Interview" }
+        conversations:
+          type: array
+          items: { $ref: "#/components/schemas/Conversation" }
+    ConversationInput:
+      type: object
+      required: [participantId]
+      properties:
+        participantId: { type: string, minLength: 1 }
+    Conversation:
+      type: object
+      required: [id, participant, lastMessage, unreadCount, updatedAt]
+      properties:
+        id: { type: integer }
+        participant: { $ref: "#/components/schemas/UserSummary" }
+        lastMessage: { anyOf: [{ $ref: "#/components/schemas/Message" }, { type: "null" }] }
+        unreadCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    MessageInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 4000 }
+    Message:
+      type: object
+      required: [id, conversationId, senderId, content, createdAt, readAt]
+      properties:
+        id: { type: integer }
+        conversationId: { type: integer }
+        senderId: { type: string }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: ["string", "null"], format: date-time }
+    MessagePage:
+      type: object
+      required: [items, nextBeforeId]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
+        nextBeforeId: { type: ["integer", "null"] }
+    InterviewInput:
+      type: object
+      required: [role, experienceLevel, interviewType, difficulty, questionCount, language]
+      properties:
+        role: { type: string, minLength: 1, maxLength: 80 }
+        experienceLevel: { type: string, enum: [Fresher, Intermediate, Experienced] }
+        interviewType: { type: string, enum: [Technical, HR, Communication, Behavioral, Mixed] }
+        difficulty: { type: string, enum: [Easy, Medium, Hard] }
+        questionCount: { type: integer, enum: [5, 10, 15] }
+        language: { type: string, minLength: 2, maxLength: 60 }
+    InterviewQuestion:
+      type: object
+      required: [id, question, category]
+      properties:
+        id: { type: integer }
+        question: { type: string }
+        category: { type: string }
+    InterviewAnswer:
+      type: object
+      required: [questionId, answer]
+      properties:
+        questionId: { type: integer }
+        answer: { type: string }
+    CategoryScore:
+      type: object
+      required: [category, score, reason]
+      properties:
+        category: { type: string }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        reason: { type: string }
+    AnswerFeedback:
+      type: object
+      required: [questionId, feedback, strengths, improvements, suggestedAnswer]
+      properties:
+        questionId: { type: integer }
+        feedback: { type: string }
+        strengths:
+          type: array
+          items: { type: string }
+        improvements:
+          type: array
+          items: { type: string }
+        suggestedAnswer: { type: string }
+    DayPlan:
+      type: object
+      required: [day, focus, activity]
+      properties:
+        day: { type: integer, minimum: 1, maximum: 7 }
+        focus: { type: string }
+        activity: { type: string }
+    InterviewReport:
+      type: object
+      required: [overallScore, categoryScores, strengths, weakAreas, answerFeedback, communicationFeedback, conceptsToReview, recommendedQuestions, sevenDayPlan, disclaimer]
+      properties:
+        overallScore: { type: integer, minimum: 0, maximum: 100 }
+        categoryScores:
+          type: array
+          items: { $ref: "#/components/schemas/CategoryScore" }
+        strengths:
+          type: array
+          items: { type: string }
+        weakAreas:
+          type: array
+          items: { type: string }
+        answerFeedback:
+          type: array
+          items: { $ref: "#/components/schemas/AnswerFeedback" }
+        communicationFeedback: { type: string }
+        conceptsToReview:
+          type: array
+          items: { type: string }
+        recommendedQuestions:
+          type: array
+          items: { type: string }
+        sevenDayPlan:
+          type: array
+          items: { $ref: "#/components/schemas/DayPlan" }
+        disclaimer: { type: string }
+    Interview:
+      type: object
+      required: [id, role, experienceLevel, interviewType, difficulty, questionCount, language, status, questions, answers, report, createdAt, completedAt]
+      properties:
+        id: { type: integer }
+        role: { type: string }
+        experienceLevel: { type: string }
+        interviewType: { type: string }
+        difficulty: { type: string }
+        questionCount: { type: integer }
+        language: { type: string }
+        status: { type: string, enum: [in_progress, completed] }
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/InterviewQuestion" }
+        answers:
+          type: array
+          items: { $ref: "#/components/schemas/InterviewAnswer" }
+        report:
+          anyOf:
+            - $ref: "#/components/schemas/InterviewReport"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+    InterviewAnswerInput:
+      type: object
+      required: [questionId, answer]
+      properties:
+        questionId: { type: integer, minimum: 0 }
+        answer: { type: string, maxLength: 12000 }
+    AssistantInput:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 4000 }
+        context: { type: ["string", "null"], maxLength: 8000 }
+    AssistantResponse:
+      type: object
+      required: [response]
+      properties:
+        response: { type: string }
 
